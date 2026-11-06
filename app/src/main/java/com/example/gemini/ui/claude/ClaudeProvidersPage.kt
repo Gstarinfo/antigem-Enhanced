@@ -50,9 +50,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gemini.data.agent.claude.ClaudeProvider
 import com.example.gemini.data.agent.claude.ClaudeProviderModel
+import com.example.gemini.data.agent.claude.ClaudeProviderValidator
 import com.example.gemini.theme.QuotaAmber
+import com.example.gemini.theme.QuotaGreen
 import com.example.gemini.theme.QuotaRed
 import com.example.gemini.ui.components.ClaudeAccent
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 
 private const val OPENROUTER_BASE_URL = "https://openrouter.ai/api"
 
@@ -100,9 +106,52 @@ fun ProvidersPage(deps: ClaudeSettingsDeps) {
         }
     }
 
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+    ) {
         if (providers.none { it.openrouter }) {
-            OutlinedButton(onClick = { editing = ClaudeProvider(name = "OpenRouter", base_url = OPENROUTER_BASE_URL) }) { Text("+ OpenRouter") }
+            OutlinedButton(onClick = {
+                editing = ClaudeProvider(
+                    name = "OpenRouter",
+                    base_url = OPENROUTER_BASE_URL,
+                    models_url = "https://openrouter.ai/api/v1/models",
+                    models = listOf(
+                        ClaudeProviderModel("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet"),
+                        ClaudeProviderModel("deepseek/deepseek-chat", "DeepSeek V3"),
+                        ClaudeProviderModel("deepseek/deepseek-r1", "DeepSeek R1")
+                    )
+                )
+            }) { Text("+ OpenRouter") }
+        }
+        if (providers.none { it.base_url.contains("deepseek.com") }) {
+            OutlinedButton(onClick = {
+                editing = ClaudeProvider(
+                    name = "DeepSeek",
+                    base_url = "https://api.deepseek.com/anthropic",
+                    models_url = "https://api.deepseek.com/models",
+                    models = listOf(
+                        ClaudeProviderModel("deepseek-chat", "DeepSeek Chat (V3)"),
+                        ClaudeProviderModel("deepseek-reasoner", "DeepSeek Reasoner (R1)")
+                    )
+                )
+            }) { Text("+ DeepSeek") }
+        }
+        if (providers.none { it.base_url.contains("api.anthropic.com") }) {
+            OutlinedButton(onClick = {
+                editing = ClaudeProvider(
+                    name = "Anthropic API",
+                    base_url = "https://api.anthropic.com",
+                    models_url = "https://api.anthropic.com/v1/models",
+                    models = listOf(
+                        ClaudeProviderModel("claude-3-7-sonnet-latest", "Claude 3.7 Sonnet"),
+                        ClaudeProviderModel("claude-3-5-sonnet-latest", "Claude 3.5 Sonnet"),
+                        ClaudeProviderModel("claude-3-5-haiku-latest", "Claude 3.5 Haiku")
+                    )
+                )
+            }) { Text("+ Anthropic Key") }
         }
         OutlinedButton(onClick = { editing = ClaudeProvider() }) { Text("+ Custom provider") }
     }
@@ -153,16 +202,35 @@ fun ProvidersPage(deps: ClaudeSettingsDeps) {
                     newModel = ""
                 }) { Text("Add", color = ClaudeAccent) }
             }
-            val canFetch = p.openrouter || p.models_url.isNotBlank()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(enabled = canFetch && fetching == null, onClick = {
-                    fetching = p.id
-                    backend.fetchProviderModels(p.id, freeOnly = p.openrouter) { res ->
-                        fetching = null
-                        res.onSuccess { fetched = p to it }
-                            .onFailure { Toast.makeText(context, "Cannot fetch models: ${it.message}", Toast.LENGTH_LONG).show() }
-                    }
-                }) { Text(if (p.openrouter) "Fetch free models" else "Fetch models", color = if (canFetch) ClaudeAccent else muted) }
+            val canFetch = p.openrouter || p.models_url.isNotBlank() || p.base_url.contains("deepseek.com") || p.base_url.contains("anthropic.com")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (p.openrouter) {
+                    TextButton(enabled = canFetch && fetching == null, onClick = {
+                        fetching = p.id
+                        backend.fetchProviderModels(p.id, freeOnly = true) { res ->
+                            fetching = null
+                            res.onSuccess { fetched = p to it }
+                                .onFailure { Toast.makeText(context, "Cannot fetch models: ${it.message}", Toast.LENGTH_LONG).show() }
+                        }
+                    }) { Text("Fetch free models", color = ClaudeAccent) }
+                    TextButton(enabled = canFetch && fetching == null, onClick = {
+                        fetching = p.id
+                        backend.fetchProviderModels(p.id, freeOnly = false) { res ->
+                            fetching = null
+                            res.onSuccess { fetched = p to it }
+                                .onFailure { Toast.makeText(context, "Cannot fetch models: ${it.message}", Toast.LENGTH_LONG).show() }
+                        }
+                    }) { Text("Fetch all models", color = ClaudeAccent) }
+                } else {
+                    TextButton(enabled = canFetch && fetching == null, onClick = {
+                        fetching = p.id
+                        backend.fetchProviderModels(p.id, freeOnly = false) { res ->
+                            fetching = null
+                            res.onSuccess { fetched = p to it }
+                                .onFailure { Toast.makeText(context, "Cannot fetch models: ${it.message}", Toast.LENGTH_LONG).show() }
+                        }
+                    }) { Text("Fetch models", color = if (canFetch) ClaudeAccent else muted) }
+                }
                 if (fetching == p.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = ClaudeAccent)
                 if (!canFetch) Text("Set a models URL (Edit) to fetch the list", fontSize = 11.sp, color = muted)
             }
@@ -225,8 +293,37 @@ private fun ProviderDialog(initial: ClaudeProvider, onDismiss: () -> Unit, onSav
                     smallModel, { smallModel = it }, label = { Text("Background model (optional)") }, singleLine = true,
                     placeholder = { Text("titles & summaries; default: the chat's model") }, modifier = Modifier.fillMaxWidth()
                 )
+                var testingConnection by remember { mutableStateOf(false) }
+                var testResult by remember { mutableStateOf<Result<String>?>(null) }
+                val coroutineScope = rememberCoroutineScope()
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = !testingConnection && baseUrl.isNotBlank() && key.isNotBlank(),
+                        onClick = {
+                            testingConnection = true
+                            testResult = null
+                            coroutineScope.launch {
+                                testResult = ClaudeProviderValidator.validate(baseUrl, key)
+                                testingConnection = false
+                            }
+                        }
+                    ) {
+                        if (testingConnection) {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text("Test Connection", fontSize = 12.sp)
+                    }
+                }
+                testResult?.onSuccess {
+                    Text("✓ $it", fontSize = 11.5.sp, color = QuotaGreen)
+                }?.onFailure {
+                    Text("✗ ${it.message}", fontSize = 11.5.sp, color = QuotaRed)
+                }
+
                 Text(
-                    if (openRouter) "OpenRouter's model list is fetched automatically (free models)." else "The models URL lets you fetch the provider's model list instead of typing ids.",
+                    if (openRouter) "OpenRouter's model list can be fetched automatically." else "The models URL lets you fetch the provider's model list instead of typing ids.",
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                 )
                 error?.let { Text(it, fontSize = 12.sp, color = QuotaRed) }

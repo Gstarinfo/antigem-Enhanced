@@ -102,8 +102,8 @@ func (m *Manager) providerSettingsFile(p Provider, model string) (string, error)
 	env := map[string]string{
 		"ANTHROPIC_BASE_URL":   p.BaseURL,
 		"ANTHROPIC_AUTH_TOKEN": p.APIKey,
-		// an API key from the environment would win over the token
-		"ANTHROPIC_API_KEY":             "",
+		// Provide ANTHROPIC_API_KEY so both direct Anthropic keys and third-party tokens work
+		"ANTHROPIC_API_KEY":             p.APIKey,
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL": small,
 		"ANTHROPIC_SMALL_FAST_MODEL":    small,
 	}
@@ -412,8 +412,14 @@ func isClaudeAlias(model string) bool {
 // (OpenRouter) keeps the free models that can call tools, which Claude Code needs.
 func fetchProviderModels(ctx context.Context, p Provider, freeOnly bool) ([]ProviderModel, error) {
 	listURL := p.ModelsURL
-	if listURL == "" && isOpenRouter(p.BaseURL) {
-		listURL = openRouterModelsURL
+	if listURL == "" {
+		if isOpenRouter(p.BaseURL) {
+			listURL = openRouterModelsURL
+		} else if strings.Contains(p.BaseURL, "deepseek.com") {
+			listURL = "https://api.deepseek.com/models"
+		} else if strings.Contains(p.BaseURL, "api.anthropic.com") {
+			listURL = "https://api.anthropic.com/v1/models"
+		}
 	}
 	if listURL == "" {
 		return nil, errors.New("set the provider's models URL first")

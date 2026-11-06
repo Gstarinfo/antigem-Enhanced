@@ -384,7 +384,7 @@ fun ChatScreen(
     } else null
     val claudeEntry = if (com.example.gemini.domain.model.AgentKind.CLAUDE in enabledAgents) {
         com.example.gemini.ui.agents.claudeStatusEntry(
-            state = claudeState,
+            state = claudeChatState,
             status = claudeStatus,
             error = claudeStatusError,
             serverRestarting = serverRestarting,
@@ -2292,7 +2292,12 @@ fun ChatScreen(
     }
 
     if (showClaudeLogin) {
-        com.example.gemini.ui.claude.ClaudeLoginDialog(viewModel.claudeAccount) { showClaudeLogin = false }
+        com.example.gemini.ui.claude.ClaudeLoginDialog(
+            account = viewModel.claudeAccount,
+            backend = viewModel.claudeBackend,
+            onSelectModel = { viewModel.selectModel(it) },
+            onDismiss = { showClaudeLogin = false }
+        )
     }
 
     // asked once the local environment (rootfs) is installed, before the local server starts

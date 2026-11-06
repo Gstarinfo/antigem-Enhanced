@@ -341,7 +341,14 @@ private fun AccountPage(deps: ClaudeSettingsDeps) {
         }
     }
 
-    if (showLogin) ClaudeLoginDialog(deps.account) { showLogin = false }
+    if (showLogin) {
+        ClaudeLoginDialog(
+            account = deps.account,
+            backend = deps.backend,
+            onSelectModel = { deps.backend.selectModel(it) },
+            onDismiss = { showLogin = false }
+        )
+    }
 }
 
 // ======================================================================== Chat defaults
