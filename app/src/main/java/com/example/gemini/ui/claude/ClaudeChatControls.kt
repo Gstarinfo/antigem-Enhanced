@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.DataUsage
 import androidx.compose.material.icons.outlined.Lightbulb
@@ -34,6 +36,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -54,9 +57,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.example.gemini.data.agent.claude.ClaudeAccountManager
 import com.example.gemini.data.agent.claude.ClaudeChatBackend
 import com.example.gemini.data.agent.claude.ClaudePreferences
+import com.example.gemini.data.agent.claude.ClaudeProviderModel
 import com.example.gemini.theme.QuotaAmber
 import com.example.gemini.theme.QuotaGreen
 import com.example.gemini.theme.QuotaRed
@@ -271,14 +276,17 @@ fun ClaudeModelSheet(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 22.dp).navigationBarsPadding()
         ) {
             // Claude's own models need the Claude login; the providers' models only their key
-            val signedOut = accountState == com.example.gemini.data.agent.claude.ClaudeStatus.SIGNED_OUT
+            val signedOut = !account.isLoggedIn
             val rows = when {
                 signedOut -> emptyList()
                 models.isNotEmpty() -> models.map { Triple(it.value, it.displayName.ifBlank { it.value }, it.description) }
                 else -> fallback.filter { ClaudeChatBackend.providerOf(it.id).isEmpty() }.map { Triple(it.id, it.displayName, it.description) }
             }
-            val customSections = providers.filter { it.models.isNotEmpty() }
-            val customCount = customSections.sumOf { it.models.size }
+            val customSections = providers
+            val customCount = customSections.sumOf { p ->
+                val mList = if (p.models.isNotEmpty()) p.models else ClaudeChatBackend.defaultModelsForProvider(p)
+                mList.size
+            }
 
             AgentSheetHeader(
                 AgentKind.CLAUDE,
@@ -397,10 +405,90 @@ fun ClaudeModelSheet(
 
             // one section per custom provider (Settings → Claude Code → Custom providers)
             customSections.forEach { p ->
+                val pModels = if (p.models.isNotEmpty()) p.models else ClaudeChatBackend.defaultModelsForProvider(p)
                 SheetSectionLabel(p.name, trailing = "custom provider")
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    p.models.forEach { m ->
+                    pModels.forEach { m ->
                         ModelRow("@${p.id}/${m.id}", m.name?.takeIf { it.isNotBlank() } ?: m.id, if (m.name.isNullOrBlank()) "" else m.id)
+                    }
+                }
+                var showAddCustom by remember(p.id) { mutableStateOf(false) }
+                var customModelInput by remember(p.id) { mutableStateOf("") }
+                var isFetching by remember(p.id) { mutableStateOf(false) }
+                val context = androidx.compose.ui.platform.LocalContext.current
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = { showAddCustom = !showAddCustom },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Icon(Icons.Outlined.Add, null, modifier = Modifier.size(16.dp), tint = ClaudeAccent)
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (showAddCustom) "Cancel" else "Add Model ID", fontSize = 12.sp, color = ClaudeAccent)
+                    }
+                    TextButton(
+                        onClick = {
+                            isFetching = true
+                            backend.fetchProviderModels(p.id, freeOnly = false) { res ->
+                                isFetching = false
+                                res.onSuccess { fetchedModels ->
+                                    val newModels = p.models + fetchedModels.filter { fm -> p.models.none { it.id == fm.id } }
+                                    backend.saveProvider(p.copy(models = newModels))
+                                    Toast.makeText(context, "Loaded ${fetchedModels.size} models from ${p.name}", Toast.LENGTH_SHORT).show()
+                                }.onFailure {
+                                    Toast.makeText(context, "Fetch failed: ${it.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        enabled = !isFetching,
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        if (isFetching) {
+                            androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = ClaudeAccent)
+                            Spacer(Modifier.width(4.dp))
+                        } else {
+                            Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp), tint = ClaudeAccent)
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text("Fetch Models", fontSize = 12.sp, color = ClaudeAccent)
+                    }
+                }
+                if (showAddCustom) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = customModelInput,
+                            onValueChange = { customModelInput = it },
+                            placeholder = { Text("Model ID (e.g. deepseek-v3)", fontSize = 12.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                        )
+                        Button(
+                            onClick = {
+                                val trimmed = customModelInput.trim()
+                                if (trimmed.isNotBlank()) {
+                                    val updatedModels = p.models + ClaudeProviderModel(trimmed)
+                                    backend.saveProvider(p.copy(models = updatedModels))
+                                    backend.selectModel("@${p.id}/$trimmed")
+                                    showAddCustom = false
+                                    customModelInput = ""
+                                    onDismiss()
+                                }
+                            },
+                            enabled = customModelInput.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(containerColor = ClaudeAccent),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Use", fontSize = 12.sp)
+                        }
                     }
                 }
             }

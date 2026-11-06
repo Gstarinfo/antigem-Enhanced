@@ -86,8 +86,30 @@ func NewManager(homeDir, defaultCwd, customBin string) *Manager {
 		BinPath:    customBin,
 		sessions:   make(map[string]*Session),
 	}
+	m.ensureClaudeConfig()
 	go m.reapLoop()
 	return m
+}
+
+func (m *Manager) ensureClaudeConfig() {
+	configPath := filepath.Join(m.HomeDir, ".claude.json")
+	var cfg map[string]interface{}
+	if data, err := os.ReadFile(configPath); err == nil {
+		_ = json.Unmarshal(data, &cfg)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+	modified := false
+	if v, ok := cfg["hasCompletedOnboarding"].(bool); !ok || !v {
+		cfg["hasCompletedOnboarding"] = true
+		modified = true
+	}
+	if modified {
+		if out, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+			_ = os.WriteFile(configPath, out, 0o600)
+		}
+	}
 }
 
 // ResolveBinary finds the `claude` executable.
@@ -322,11 +344,13 @@ func (s *Session) Write(line []byte) error {
 }
 
 func (s *Session) spawnLocked() error {
+	s.mgr.ensureClaudeConfig()
 	bin, err := s.mgr.ResolveBinary()
 	if err != nil {
 		return err
 	}
 	args := append([]string{}, baseArgs...)
+	var customEnv []string
 	if providerID, model, custom := ParseModelRef(s.opts.Model); custom {
 		p, ok := s.mgr.provider(providerID)
 		if !ok {
@@ -337,6 +361,17 @@ func (s *Session) spawnLocked() error {
 			return fmt.Errorf("custom provider settings: %w", err)
 		}
 		args = append(args, "--model", model, "--settings", settings)
+		small := p.SmallModel
+		if small == "" {
+			small = model
+		}
+		customEnv = []string{
+			"ANTHROPIC_BASE_URL=" + p.BaseURL,
+			"ANTHROPIC_AUTH_TOKEN=" + p.APIKey,
+			"ANTHROPIC_API_KEY=" + p.APIKey,
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL=" + small,
+			"ANTHROPIC_SMALL_FAST_MODEL=" + small,
+		}
 	} else if s.opts.Model != "" {
 		args = append(args, "--model", s.opts.Model)
 	}
@@ -402,6 +437,15 @@ func (s *Session) spawnLocked() error {
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = cwd
 	cmd.Env = os.Environ()
+	if len(customEnv) > 0 {
+		cmd.Env = append(cmd.Env, customEnv...)
+	} else if _, env := s.mgr.settingsEndpoint(); env != nil {
+		for k, v := range env {
+			if str, ok := v.(string); ok && str != "" {
+				cmd.Env = append(cmd.Env, k+"="+str)
+			}
+		}
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err

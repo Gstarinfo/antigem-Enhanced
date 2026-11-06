@@ -59,7 +59,7 @@ class ClaudeAccountManager(
             st == null -> ClaudeStatus.CHECKING
             !st.installed -> ClaudeStatus.NOT_INSTALLED
             st.auth == null && st.auth_error != null -> ClaudeStatus.ERROR
-            st.auth?.loggedIn == true -> ClaudeStatus.READY
+            st.auth?.loggedIn == true || st.auth?.hasCustomProviders == true -> ClaudeStatus.READY
             else -> ClaudeStatus.SIGNED_OUT
         }
     }.stateIn(scope, SharingStarted.Eagerly, ClaudeStatus.CHECKING)
@@ -68,6 +68,7 @@ class ClaudeAccountManager(
     private var statusJob: Job? = null
 
     val isLoggedIn: Boolean get() = _status.value?.auth?.loggedIn == true
+    val hasCustomProviders: Boolean get() = _status.value?.auth?.hasCustomProviders == true
 
     fun refreshStatus() {
         statusJob?.cancel()

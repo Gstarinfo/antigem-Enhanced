@@ -450,8 +450,9 @@ class ClaudeTranscript {
             val interrupted = r.terminal_reason?.startsWith("aborted") == true
             if (r.is_error && !interrupted) {
                 val msg = r.errors.joinToString("\n").ifBlank { r.result.orEmpty() }.ifBlank { r.subtype }
-                if (msg.contains("/login", ignoreCase = true) || msg.contains("not logged in", ignoreCase = true) ||
-                    msg.contains("authentication", ignoreCase = true) || msg.contains("OAuth token", ignoreCase = true)
+                val isCustomProvider = sessionModel.startsWith("@") || ClaudeChatBackend.providerOf(sessionModel).isNotEmpty()
+                if (!isCustomProvider && (msg.contains("/login", ignoreCase = true) || msg.contains("not logged in", ignoreCase = true) ||
+                    msg.contains("authentication", ignoreCase = true) || msg.contains("OAuth token", ignoreCase = true))
                 ) needsLogin = true
                 turn.parts.add(Part.Error(errorTitle(r.subtype, msg), msg))
             }

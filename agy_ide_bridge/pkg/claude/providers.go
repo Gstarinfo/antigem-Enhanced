@@ -314,6 +314,7 @@ func (m *Manager) saveProvider(w http.ResponseWriter, id string, p Provider) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"success": false, "error": err.Error()})
 		return
 	}
+	m.ensureClaudeConfig()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "provider": viewOf(p)})
 }
 

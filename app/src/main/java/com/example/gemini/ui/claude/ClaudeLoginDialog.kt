@@ -146,10 +146,12 @@ fun ClaudeLoginDialog(
         }
         isSaving = true
         errorMessage = null
-        backend.saveProvider(provider) { err ->
+        backend.saveProvider(provider) { err, saved ->
             isSaving = false
             if (err == null) {
-                val fullModelRef = "@${provider.id.ifBlank { provider.name.lowercase().replace(Regex("[^a-z0-9]"), "-") }}/$targetModelId"
+                val effectiveId = saved?.id?.ifBlank { null } ?: provider.id.ifBlank { provider.name.lowercase().replace(Regex("[^a-z0-9]"), "-") }
+                val fullModelRef = "@$effectiveId/$targetModelId"
+                account.refreshStatus()
                 onSelectModel?.invoke(fullModelRef)
                 Toast.makeText(context, "${provider.name} configured! Ready to chat.", Toast.LENGTH_SHORT).show()
                 onDismiss()

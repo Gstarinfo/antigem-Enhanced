@@ -850,7 +850,8 @@ class ClaudeChatBackend(
     /** Claude's models, then every provider's models ("@provider/model", described by the provider's name). */
     private fun publishModels() {
         _availableModels.value = officialModels + _providers.value.flatMap { p ->
-            p.models.map { m ->
+            val list = if (p.models.isNotEmpty()) p.models else defaultModelsForProvider(p)
+            list.map { m ->
                 val ref = "@${p.id}/${m.id}"
                 AiModel(
                     id = ref,
@@ -882,13 +883,19 @@ class ClaudeChatBackend(
         }.onFailure { Log.w(TAG, "providers failed: ${it.message}") }
     }
 
-    /** Adds or updates [provider]; [onDone] gets the error, or null when it was saved. */
-    fun saveProvider(provider: ClaudeProvider, onDone: (String?) -> Unit = {}) {
+    /** Adds or updates [provider]; [onDone] gets the error and saved provider, or null when it was saved. */
+    fun saveProvider(provider: ClaudeProvider, onDone: (err: String?, saved: ClaudeProvider?) -> Unit) {
         backendScope.launch {
-            val err = client.saveProvider(provider).fold({ if (it.success) null else it.error ?: "the bridge refused" }, { it.message ?: "failed" })
+            val res = client.saveProvider(provider)
+            val err = res.fold({ if (it.success) null else it.error ?: "the bridge refused" }, { it.message ?: "failed" })
+            val savedProvider = res.getOrNull()?.provider
             if (err == null) refreshProviders()
-            withContext(Dispatchers.Main) { onDone(err) }
+            withContext(Dispatchers.Main) { onDone(err, savedProvider) }
         }
+    }
+
+    fun saveProvider(provider: ClaudeProvider, onDone: (String?) -> Unit = {}) {
+        saveProvider(provider) { err, _ -> onDone(err) }
     }
 
     fun deleteProvider(id: String) {
@@ -1430,6 +1437,34 @@ class ClaudeChatBackend(
 
         /** The model's own id (without "@provider/"). */
         fun rawModel(modelId: String): String = if (modelId.startsWith("@")) modelId.substringAfter('/') else modelId
+
+        /** Suggested fallback models for a provider when its remote model list has not yet been fetched. */
+        fun defaultModelsForProvider(p: ClaudeProvider): List<ClaudeProviderModel> {
+            val lowerUrl = p.base_url.lowercase()
+            val lowerName = p.name.lowercase()
+            return when {
+                lowerUrl.contains("deepseek") || lowerName.contains("deepseek") -> listOf(
+                    ClaudeProviderModel("deepseek-chat", "DeepSeek Chat (V3)"),
+                    ClaudeProviderModel("deepseek-reasoner", "DeepSeek Reasoner (R1)")
+                )
+                lowerUrl.contains("openrouter") || lowerName.contains("openrouter") -> listOf(
+                    ClaudeProviderModel("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet"),
+                    ClaudeProviderModel("anthropic/claude-3.7-sonnet", "Claude 3.7 Sonnet"),
+                    ClaudeProviderModel("deepseek/deepseek-chat", "DeepSeek V3"),
+                    ClaudeProviderModel("deepseek/deepseek-r1", "DeepSeek R1"),
+                    ClaudeProviderModel("google/gemini-2.5-flash", "Gemini 2.5 Flash")
+                )
+                lowerUrl.contains("anthropic") || lowerName.contains("anthropic") -> listOf(
+                    ClaudeProviderModel("claude-3-7-sonnet-latest", "Claude 3.7 Sonnet"),
+                    ClaudeProviderModel("claude-3-5-sonnet-latest", "Claude 3.5 Sonnet"),
+                    ClaudeProviderModel("claude-3-5-haiku-latest", "Claude 3.5 Haiku")
+                )
+                else -> listOf(
+                    ClaudeProviderModel("claude-3-7-sonnet-latest", "Claude 3.7 Sonnet"),
+                    ClaudeProviderModel("claude-3-5-sonnet-latest", "Claude 3.5 Sonnet")
+                )
+            }
+        }
 
         private val IMAGE_TYPES = setOf("image/jpeg", "image/png", "image/gif", "image/webp")
         /** Larger images are saved as files (the API takes inline images up to about 5 MB). */

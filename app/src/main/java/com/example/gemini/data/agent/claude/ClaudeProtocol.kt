@@ -371,7 +371,9 @@ data class ClaudeAuthStatus(
     val loggedIn: Boolean = false,
     val authMethod: String? = null,
     val email: String? = null,
-    val subscriptionType: String? = null
+    val subscriptionType: String? = null,
+    val hasCustomProviders: Boolean = false,
+    val customProvidersCount: Int = 0
 )
 
 @Serializable

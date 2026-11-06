@@ -363,6 +363,23 @@ func (m *Manager) handleStatus(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		resp["auth_error"] = err.Error()
 	}
+	if auth == nil {
+		auth = map[string]interface{}{}
+		resp["auth"] = auth
+	}
+	m.provMu.Lock()
+	pf := m.loadProvidersLocked()
+	m.provMu.Unlock()
+	hasCustom := len(pf.Providers) > 0
+	if !hasCustom {
+		if _, env := m.settingsEndpoint(); env != nil {
+			hasCustom = true
+		}
+	}
+	if hasCustom {
+		auth["hasCustomProviders"] = true
+		auth["customProvidersCount"] = len(pf.Providers)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
