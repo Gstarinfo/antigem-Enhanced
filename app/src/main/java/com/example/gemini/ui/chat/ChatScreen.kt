@@ -285,6 +285,7 @@ fun ChatScreen(
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showAttachmentSelector by remember { mutableStateOf(false) }
     var showProjectPickerDialog by remember { mutableStateOf(false) }
+    var showProjectImportDialog by remember { mutableStateOf(false) }
     var showGitCloneDialog by remember { mutableStateOf(false) }
     var showWorkspaceFolderBrowserDialog by remember { mutableStateOf(false) }
     var showStopConfirmDialog by remember { mutableStateOf(false) }
@@ -2753,12 +2754,27 @@ fun ChatScreen(
                 showProjectPickerDialog = false
                 showGitCloneDialog = true
             },
+            onImportProject = {
+                showProjectPickerDialog = false
+                showProjectImportDialog = true
+            },
             onRefresh = {
                 scope.launch {
                     TermuxDaemonManager.loadProjects(conversations)
                 }
             },
             onDismiss = { showProjectPickerDialog = false }
+        )
+    }
+
+    if (showProjectImportDialog) {
+        com.example.gemini.ui.project.ProjectImportDialog(
+            onProjectImported = { importedProj ->
+                showProjectImportDialog = false
+                TermuxDaemonManager.setActiveProject(importedProj)
+                viewModel.onProjectChanged(importedProj.path)
+            },
+            onDismiss = { showProjectImportDialog = false }
         )
     }
 

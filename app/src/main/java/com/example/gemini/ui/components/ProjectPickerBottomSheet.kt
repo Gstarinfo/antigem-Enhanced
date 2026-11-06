@@ -47,6 +47,7 @@ fun ProjectPickerDialog(
     onSelectProject: (ProjectItem?) -> Unit,
     onBrowseFolder: () -> Unit,
     onCloneRepo: (() -> Unit)? = null,
+    onImportProject: (() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
@@ -352,8 +353,35 @@ fun ProjectPickerDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Bottom Action: Clone a public git repository into home
-                if (onCloneRepo != null) {
+                // Bottom Action: Import Project from ZIP or Git (Mobile-Harness style)
+                if (onImportProject != null) {
+                    OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onImportProject()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, ClaudeTerracotta.copy(alpha = 0.6f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CloudDownload,
+                            contentDescription = null,
+                            tint = ClaudeTerracotta,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Import Project (ZIP / Git)...",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ClaudeTerracotta
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                } else if (onCloneRepo != null) {
                     OutlinedButton(
                         onClick = {
                             onDismiss()

@@ -12,7 +12,7 @@ fi
 
 # ==============================================================================
 # antiGem Git Repository Cloner
-# Usage: git_clone <public https url> [folder name]
+# Usage: git_clone <public https url> [folder name] [branch] [upstream url]
 # Clones into $HOME/<folder name>; the name defaults to the repository's name.
 # ==============================================================================
 set -uo pipefail
@@ -27,6 +27,8 @@ trim() {
 HOME_DIR="${HOME:-/data/data/com.termux/files/home}"
 REPO_URL="$(trim "${1:-}")"
 FOLDER_NAME="$(trim "${2:-}")"
+BRANCH="$(trim "${3:-}")"
+UPSTREAM_URL="$(trim "${4:-}")"
 
 echo "================================================"
 echo "        antiGem Git Repository Cloner           "
@@ -56,6 +58,12 @@ fi
 TARGET_DIR="${HOME_DIR}/${FOLDER_NAME}"
 echo "Repository : $REPO_URL"
 echo "Target     : $TARGET_DIR"
+if [ -n "$BRANCH" ]; then
+    echo "Branch     : $BRANCH"
+fi
+if [ -n "$UPSTREAM_URL" ]; then
+    echo "Upstream   : $UPSTREAM_URL"
+fi
 echo "================================================"
 
 if ! command -v git >/dev/null 2>&1; then
@@ -79,14 +87,27 @@ fi
 # public repos only: fail instead of waiting for a username/password prompt
 export GIT_TERMINAL_PROMPT=0
 
-echo "[git] git clone --progress $REPO_URL $TARGET_DIR"
+CLONE_ARGS=("--progress")
+if [ -n "$BRANCH" ]; then
+    CLONE_ARGS+=("--branch" "$BRANCH")
+fi
+
+echo "[git] git clone ${CLONE_ARGS[*]} $REPO_URL $TARGET_DIR"
 # git draws progress with carriage returns; split them into lines for the log
-git clone --progress "$REPO_URL" "$TARGET_DIR" 2>&1 | tr '\r' '\n'
+git clone "${CLONE_ARGS[@]}" "$REPO_URL" "$TARGET_DIR" 2>&1 | tr '\r' '\n'
 STATUS=$?
 
 if [ $STATUS -ne 0 ]; then
     echo "❌ Error: git clone failed (exit $STATUS)."
     exit $STATUS
+fi
+
+if [ -n "$UPSTREAM_URL" ]; then
+    echo "[git] Configuring upstream remote: $UPSTREAM_URL"
+    git -C "$TARGET_DIR" remote add upstream "$UPSTREAM_URL" 2>&1 || true
+    echo "[git] Fetching upstream branches..."
+    git -C "$TARGET_DIR" fetch upstream 2>&1 || true
+    echo "✅ Upstream remote linked successfully."
 fi
 
 echo "✅ Cloned into $TARGET_DIR"
